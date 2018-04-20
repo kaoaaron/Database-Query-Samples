@@ -1,0 +1,1 @@
+Queries written for CSC 370 - Databases taught by Bill Bird at the University of Victoria in Spring 2018

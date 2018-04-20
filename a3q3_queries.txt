@@ -1,0 +1,51 @@
+-- CSC 370 - Spring 2018
+-- Assignment 3: Queries for Question 3 (vwsn_1year)
+-- Name: Aaron Kao
+-- Student ID: V00773547
+
+-- Place your query for each sub-question in the appropriate position
+-- below. Do not modify or remove the '-- Question 3x --' header before
+-- each question.
+
+
+-- Question 3a --
+
+with
+	hottest as (select station_id as id, observation_time, temperature from observations where temperature = (select max(temperature) from observations))
+	select id as station_id, name, temperature, observation_time from hottest natural join stations;
+
+-- Question 3b --
+
+with
+	max_temp as (select station_id as id, max(temperature) as temperature from observations where station_id > 0 and station_id < 11
+group by station_id),
+	complete as (select id as station_id, name, temperature from max_temp natural join stations)
+	select station_id, name, temperature as max_temperature, observation_time from complete natural join observations;
+	
+
+-- Question 3c --
+
+with
+	get_date as (select *, extract(year from observation_time) as year, extract (month from observation_time) as month from observations),
+	in_month_year as (select station_id from get_date where year = 2017 and month = 6),
+	not_in_month_year as (select distinct station_id as id from observations where station_id not in (select station_id from in_month_year))
+	select id as station_id, name from not_in_month_year natural join stations;
+	
+-- Question 3d --
+
+with
+avgday as (select extract(year from observation_time) as year, extract(month from observation_time) as month, extract(day from observation_time) as day, 
+avg(temperature) as avg_temp from observations group by year, month, day),
+rankedday as (select *, rank() over(partition by year, month order by avg_temp desc) as hot_temp, rank() over(partition by year, month order by avg_temp) as low_temp from avgday),
+hottestandcoldest as (select * from rankedday where hot_temp <= 10 or low_temp <= 10),
+hottest as (select year, month, avg(avg_temp) as hot from hottestandcoldest where hot_temp <= 10 group by year, month),
+coldest as (select year, month, avg(avg_temp) as cold from hottestandcoldest where low_temp <= 10 group by year, month)
+select year, month, hot as hottest_10average, cold as coolest_10average from hottest natural join coldest;
+
+-- Question 3e --
+
+with
+avgday as (select extract(year from observation_time) as year, extract(month from observation_time) as month, extract(day from observation_time) as day, 
+avg(temperature) as avg_temp from observations group by year, month, day),
+eval28 as (select *, min(avg_temp) over(rows between 28 preceding and 1 preceding) as the_min, count(avg_temp) over(rows between 28 preceding and 1 preceding) as the_count from avgday)
+select year, month, day from eval28 where the_count = 28 and avg_temp < the_min;

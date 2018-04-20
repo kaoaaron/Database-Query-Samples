@@ -1,0 +1,108 @@
+-- CSC 370 - Spring 2018
+-- Assignment 3: Queries for Question 2 (ferries)
+-- Name: Aaron Kao
+-- Student ID: V00773547
+
+-- Place your query for each sub-question in the appropriate position
+-- below. Do not modify or remove the '-- Question 2x --' header before
+-- each question.
+
+
+-- Question 2a --
+
+with
+sailings2 as (select route_number, scheduled_departure, vessel_name from sailings),
+sailings3 as (select T1.vessel_name as V1, T2.vessel_name as V2, T1.scheduled_departure from sailings2 as T1 inner join sailings2 as T2 on
+T1.route_number = T2.route_number and T1.scheduled_departure = T2.scheduled_departure where T1 <> T2),
+sailings4 as (select v1, v2, count(scheduled_departure) as count from sailings3
+group by v1, v2 order by count desc),
+sailings5 as (select *, max(v1) over(order by count desc rows between 1 preceding and 1 preceding) as prevA,
+max(v2) over(order by count desc rows between 1 preceding and 1 preceding) as prevB from sailings4)
+select v1 as vessel1, v2 as vessel2, count as num_pairings from sailings5 where v1 = prevb and v2 = preva;
+
+-- Question 2b --
+
+with
+	travel as (select *, extract(epoch from arrival-scheduled_departure)/60  as travel_time from sailings)
+select route_number, nominal_duration, avg(travel_time) as avg_duration from travel
+natural join routes group by route_number, nominal_duration order by route_number;
+
+-- Question 2c --
+
+with 
+base as (select *, (extract(epoch from arrival-scheduled_departure))/60 as travel_time from sailings natural join routes where route_number = 1),
+basefinal as (select *,(case when travel_time - nominal_duration >= 5 then 1 else 0 end) as late, extract(day from scheduled_departure) as day, extract(month from scheduled_departure) as month from base),
+has_sailing as (select distinct month, day from basefinal),
+late_counter as (select month, day, sum(late) as late from basefinal
+group by month, day order by day),
+late_days as (select month, day from late_counter where late > 0),
+no_sailings as (select * from has_sailing except (select * from late_days))
+select month, count(day) as count from no_sailings group by month order by month;
+	
+-- Question 2d --
+
+with
+		travel as (select *, (extract(epoch from arrival-scheduled_departure))/60  as travel_time from sailings natural join routes),
+		travel2 as (select *, (case when travel_time - nominal_duration >= 5 then 1 else 0 end) as late from travel),
+		travel3 as (select vessel_name, count(vessel_name) as total_sailings, sum(late) as late_sailings from travel2
+	group by vessel_name order by vessel_name)
+		select *, cast(late_sailings as decimal)/cast(total_sailings as decimal) as late_fraction from travel3;
+	
+
+-- Question 2e --
+
+with 
+base as (select *, (extract(epoch from arrival-scheduled_departure))/60 as travel_time from sailings natural join routes),
+basefinal as (select *,(case when travel_time - nominal_duration >= 5 then 1 else 0 end) as late, extract(day from scheduled_departure) as day, extract(month from scheduled_departure) as month, extract(year from scheduled_departure) as year from base),
+ordered as (select distinct route_number, year,month, day, late from basefinal),
+remove_dupes as (select route_number, year, month, day, 0 as late from ordered where late = 1),
+late_tracker as (select * from ordered except (select * from remove_dupes) order by route_number,year, month, day),
+get_rows as (select *, rank() over(partition by route_number order by year,month,day) as the_rank, row_number(*) over(order by route_number,year, month, day) as row_num from late_tracker),
+get_prev_row as (select *, max(route_number) over(rows between 1 preceding and 1 preceding) as prev_route, max(row_num) over(rows between 1 preceding and 1 preceding) as prev_row from get_rows where late = 1 order by route_number,year, month, day),
+result1 as (select *, rank() over(partition by route_number order by year,month,day) as the_rank2,(case when route_number <> prev_route then 0 else row_num - prev_row-1 end) as dif from get_prev_row),
+first_row as (select route_number, row_num as first_num from get_rows where the_rank = 1),
+first_late as (select route_number, row_num as late_num from result1 where the_rank2 = 1),
+edgecase as (select route_number, late_num-first_num as nosail1 from first_late natural join first_row),
+regcase as (select route_number, max(dif) as nosail2 from result1 group by route_number order by route_number),
+lastrow as (select route_number, max(the_rank) as last_num, row_num from get_rows group by route_number, row_num),
+lastrow2 as (select route_number, max(row_num) as last_num from lastrow group by route_number),
+last_late as (select route_number, max(row_num) as nolate_num from 
+(select route_number, row_num, max(the_rank) as the_rank from result1 group by route_number, row_num) as T 
+group by route_number),
+result2 as (select route_number, (case when nosail2 > nosail1 then nosail2 else nosail1 end) as d1 from edgecase natural join regcase),
+otheredgecase as (select route_number, last_num-nolate_num as d2 from last_late natural join lastrow2)
+select route_number, (case when d2 > d1 then d2 else d1 end) as days_without_a_late_sailing from result2 natural join otheredgecase;
+
+
+-- Question 2f --
+
+with 
+base as (select *, (extract(epoch from arrival-scheduled_departure))/60 as travel_time from sailings natural join routes),
+basefinal as (select *,(case when travel_time - nominal_duration >= 5 then 1 else 0 end) as late, extract(day from scheduled_departure) as day, extract(month from scheduled_departure) as month, extract(year from scheduled_departure) as year from base),
+ordered as (select distinct route_number, year,month, day, late from basefinal),
+remove_dupes as (select route_number, year, month, day, 0 as late from ordered where late = 1),
+late_tracker as (select * from ordered except (select * from remove_dupes) order by route_number,year, month, day),
+get_rows as (select *, rank() over(partition by route_number order by year,month,day) as the_rank, row_number(*) over(order by route_number,year, month, day) as row_num from late_tracker),
+get_prev_row as (select *, max(route_number) over(rows between 1 preceding and 1 preceding) as prev_route, max(row_num) over(rows between 1 preceding and 1 preceding) as prev_row from get_rows where late = 1 order by route_number,year, month, day),
+result1 as (select *, rank() over(partition by route_number order by year,month,day) as the_rank2,(case when route_number <> prev_route then 0 else row_num - prev_row-1 end) as dif from get_prev_row),
+first_row as (select route_number, row_num as first_num from get_rows where the_rank = 1),
+first_late as (select route_number, row_num as late_num from result1 where the_rank2 = 1),
+edgecase as (select route_number, late_num-first_num as nosail1 from first_late natural join first_row),
+regcase as (select route_number, max(dif) as nosail2 from result1 group by route_number order by route_number),
+lastrow as (select route_number, max(the_rank) as last_num, row_num from get_rows group by route_number, row_num),
+lastrow2 as (select route_number, max(row_num) as last_num from lastrow group by route_number),
+last_late as (select route_number, max(row_num) as nolate_num from 
+(select route_number, row_num, max(the_rank) as the_rank from result1 group by route_number, row_num) as T 
+group by route_number),
+result2 as (select route_number, (case when nosail2 > nosail1 then nosail2 else nosail1 end) as d1 from edgecase natural join regcase),
+otheredgecase as (select route_number, last_num-nolate_num as d2 from last_late natural join lastrow2)
+select route_number, (case when d2 > d1 then d2 else d1 end) as days_without_a_late_sailing from result2 natural join otheredgecase;
+
+-- Question 2g --
+with
+time_calcs as (select *, (extract(epoch from actual_departure-scheduled_departure))/60 as late_time,
+(extract(epoch from arrival-scheduled_departure))/60 as travel_time from sailings natural join routes),
+flag_set as (select vessel_name, late_time, (case when travel_time - nominal_duration <= 5 then 1 else 0 end) as arrival_flag from time_calcs)
+select vessel_name, count(*) as made_up_sailings from flag_set where late_time >= 15 and arrival_flag = 1
+group by vessel_name order by vessel_name;
+

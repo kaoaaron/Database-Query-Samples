@@ -1,0 +1,29 @@
+-- CSC 370 - Spring 2018
+-- Assignment 3: Queries for Question 1 (imdb)
+-- Name: Aaron Kao
+-- Student ID: V00773547
+
+-- Place your query for each sub-question in the appropriate position
+-- below. Do not modify or remove the '-- Question 1x --' header before
+-- each question.
+
+-- Question 1a --
+
+with 
+	year_maxrating as (select year, max(rating) as rating from titles natural join ratings 
+	where title_type = 'movie' and year >= 2000 and year <= 2017 and votes >= 10000
+		group by year
+		order by year)
+select name as primary_name, year, rating, votes
+	from year_maxrating natural join ratings natural join title_names natural join titles
+	where title_type = 'movie' and votes >= 10000 and is_primary = true
+	order by year;
+
+-- Question 1b --
+
+with
+	the_count as (select series_id as title_id, count(name) as count from 
+	series_episodes natural join title_names where is_primary = 'true'
+group by series_id)
+	select name as series_name, count as episode_count from the_count natural join title_names where count >= 6000 and is_primary = 'true'
+	order by count desc;
